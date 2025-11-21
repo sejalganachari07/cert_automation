@@ -1,0 +1,3 @@
+- [x] Fix indentation errors in coursera_pipeline.py save_course_pdf function: Correct the try-except blocks for skills button handling and ensure all code is properly indented under the outer try block.
+- [x] Verify the rest of the code for any other syntax errors.
+- [x] Test the script by running it to ensure no runtime errors.
