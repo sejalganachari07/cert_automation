@@ -4,7 +4,8 @@ from pathlib import Path
 from datetime import datetime
 from playwright.sync_api import sync_playwright, Page
 
- 
+
+
 @pytest.fixture(scope="session")
 def browser():
     with sync_playwright() as p:
@@ -15,9 +16,6 @@ def browser():
                 headless=False,  # Set to True for container environment
                 args=[
                     "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage"
                     "--disable-gpu",   # Disable GPU for container environments
                     "--window-size=1920,1080" # Set window size for consistency
                 ]
@@ -42,13 +40,21 @@ def browser():
 @pytest.fixture
 def page(browser, request):
     context = browser.new_context(
-        no_viewport=True
+        viewport={"width": 1920, "height": 1080}
     )
-    page = context.new_page()
-    context.tracing.start(screenshots=True, snapshots=True, sources=True)
-    yield page
 
-    # Close page and context
-    page.close()
-    context.close()
+    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    page = context.new_page()
+
+    try:
+        yield page
+    finally:
+        test_name = request.node.name
+        trace_path = f"traces/{test_name}.zip"
+        Path("traces").mkdir(exist_ok=True)
+
+        context.tracing.stop(path=trace_path)   # MUST run before close
+        page.close()
+        context.close()
+
  
