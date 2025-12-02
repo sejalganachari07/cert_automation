@@ -3,13 +3,42 @@ import re
 import time
 
 
+def wait(page, ms: int = 500):
+    """Small wrapper around Playwright timeout to keep calls consistent."""
+    page.wait_for_timeout(ms)
+
+
+def safe_click(page, locator, *, timeout: int = 2000, scroll: bool = True, force: bool = False) -> bool:
+    """Click a locator safely without raising, returns True on success."""
+    try:
+        if locator is None:
+            return False
+        if not locator.is_visible(timeout=timeout):
+            return False
+        if scroll:
+            locator.scroll_into_view_if_needed()
+            wait(page, 300)
+        locator.click(timeout=timeout, force=force)
+        wait(page, 300)
+        return True
+    except Exception:
+        return False
+
+
+def clean_ads(page, times: int = 1, delay_ms: int = 400):
+    """Run the aggressive popup cleaner multiple times with a delay."""
+    for _ in range(times):
+        close_ads_and_popups(page)
+        wait(page, delay_ms)
+
+
 def close_ads_and_popups(page):
     """Aggressively close all ads, popups, and overlays including Black Friday ads"""
     try:
         # Press Escape key multiple times
         for _ in range(3):
             page.keyboard.press("Escape")
-            page.wait_for_timeout(150)
+            wait(page, 150)
         
         # First: Try to find and click close buttons with Playwright
         try:
@@ -22,13 +51,8 @@ def close_ads_and_popups(page):
             ).all()
             
             for btn in black_friday_close[:5]:  # Limit to first 5 to avoid clicking FAQ
-                try:
-                    if btn.is_visible(timeout=500):
-                        btn.click(timeout=1000, force=True)
-                        page.wait_for_timeout(300)
-                except:
-                    pass
-        except:
+                safe_click(page, btn, timeout=1000, force=True)
+        except Exception:
             pass
         
         # Execute JavaScript to remove popups and ads
@@ -154,7 +178,7 @@ def close_ads_and_popups(page):
             }
         """)
         
-        page.wait_for_timeout(400)
+        wait(page, 400)
         return True
         
     except Exception as e:
@@ -167,9 +191,7 @@ def close_initial_popups(page):
         print("  🔒 Closing initial popups and ads...")
         
         # Close ads and popups aggressively - multiple times
-        for i in range(5):
-            close_ads_and_popups(page)
-            page.wait_for_timeout(600)
+        clean_ads(page, times=5, delay_ms=600)
         
         # Look for the Recommended Experience popup specifically
         try:
@@ -177,11 +199,10 @@ def close_initial_popups(page):
             if popup.is_visible(timeout=3000):
                 # Click OK button
                 ok_btn = page.locator("button:has-text('OK')").first
-                if ok_btn.is_visible(timeout=2000):
-                    ok_btn.click()
+                if safe_click(page, ok_btn, timeout=2000):
                     print("    ✓ Closed 'Recommended Experience' popup")
-                    page.wait_for_timeout(1000)
-        except:
+                    wait(page, 1000)
+        except Exception:
             print("    ℹ️  No Recommended Experience popup found")
         
         # Block unwanted buttons permanently with CSS
@@ -241,9 +262,7 @@ def close_initial_popups(page):
         print("    ✓ Blocked unwanted buttons (Explore, FAQ, Difficulty info, Promo ads)")
         
         # Final cleanup after blocking
-        for i in range(3):
-            close_ads_and_popups(page)
-            page.wait_for_timeout(500)
+        clean_ads(page, times=3, delay_ms=500)
         
     except Exception as e:
         print(f"    ⚠️  Popup close warning: {str(e)[:50]}")
@@ -252,11 +271,9 @@ def close_initial_popups(page):
 def scroll_and_wait(page, pixels=500):
     """Smooth scroll with wait and AGGRESSIVE ad cleanup"""
     page.evaluate(f"window.scrollBy({{top: {pixels}, behavior: 'smooth'}})")
-    page.wait_for_timeout(300)
-    # Close any ads that appeared during scroll - do it twice
-    close_ads_and_popups(page)
-    page.wait_for_timeout(200)
-    close_ads_and_popups(page)
+    wait(page, 300)
+    # Close any ads that appeared during scroll
+    clean_ads(page, times=2, delay_ms=200)
 
 def process_about_section(page, base_url):
     """Process About section - View skills FIRST, then Read more"""
@@ -267,12 +284,10 @@ def process_about_section(page, base_url):
     try:
         # Navigate to About
         page.goto(f"{base_url}#about", wait_until="domcontentloaded")
-        page.wait_for_timeout(1500)
+        wait(page, 1500)
         
         # Close any ads that appeared - AGGRESSIVE
-        for i in range(3):
-            close_ads_and_popups(page)
-            page.wait_for_timeout(500)
+        clean_ads(page, times=3, delay_ms=500)
         
         # Scroll within About section first
         print("  📜 Initial scroll through About section...")
@@ -280,8 +295,7 @@ def process_about_section(page, base_url):
             scroll_and_wait(page, 400)
         
         # Close ads after scrolling
-        close_ads_and_popups(page)
-        page.wait_for_timeout(500)
+        clean_ads(page, times=1, delay_ms=500)
         
         # FIRST: Click "View all skills" button
         print("  🔍 STEP 1A: Looking for 'View all skills' button...")
@@ -290,19 +304,14 @@ def process_about_section(page, base_url):
             
             if skills_btn.is_visible(timeout=3000):
                 # Close ads before clicking
-                close_ads_and_popups(page)
+                clean_ads(page, times=1, delay_ms=300)
                 
-                skills_btn.scroll_into_view_if_needed()
-                page.wait_for_timeout(800)
-                
-                skills_btn.click(timeout=3000)
-                print("    ✅ Expanded 'View all skills'")
-                page.wait_for_timeout(1500)
-                
-                # Close ads immediately after expansion
-                for i in range(2):
-                    close_ads_and_popups(page)
-                    page.wait_for_timeout(500)
+                if safe_click(page, skills_btn, timeout=3000):
+                    print("    ✅ Expanded 'View all skills'")
+                    wait(page, 1500)
+
+                    # Close ads immediately after expansion
+                    clean_ads(page, times=2, delay_ms=500)
             else:
                 print("    ℹ️  'View all skills' not found")
         except Exception as e:
@@ -311,12 +320,10 @@ def process_about_section(page, base_url):
         # SECOND: Click Read more buttons
         print("  📖 STEP 1B: Clicking 'Read more' buttons...")
         click_read_more_buttons_in_section(page, "About")
-        page.wait_for_timeout(300)
+        wait(page, 300)
         
         # Close ads after all clicks
-        for i in range(2):
-            close_ads_and_popups(page)
-            page.wait_for_timeout(400)
+        clean_ads(page, times=2, delay_ms=400)
         
         # Final scroll in About
         scroll_and_wait(page, 300)
@@ -369,13 +376,10 @@ def click_read_more_buttons_in_section(page, section_name=""):
                     continue
                 
                 # Valid button - click it
-                btn.scroll_into_view_if_needed()
-                page.wait_for_timeout(600)
-                
-                btn.click(timeout=1500)
-                clicked += 1
-                print(f"      ✓ Clicked Read more {clicked}")
-                page.wait_for_timeout(1000)
+                if safe_click(page, btn, timeout=1500):
+                    clicked += 1
+                    print(f"      ✓ Clicked Read more {clicked}")
+                    wait(page, 1000)
                 
             except Exception as e:
                 continue
@@ -399,11 +403,10 @@ def process_modules_section(page, base_url):
     try:
         # Navigate to Modules
         page.goto(f"{base_url}#modules", wait_until="domcontentloaded")
-        page.wait_for_timeout(1500)
+        wait(page, 1500)
         
         # Close any ads
-        close_ads_and_popups(page)
-        page.wait_for_timeout(500)
+        clean_ads(page, times=1, delay_ms=500)
         
         print("  📦 Expanding module accordions sequentially (excluding FAQ)...")
         
@@ -445,8 +448,8 @@ def process_modules_section(page, base_url):
         if not module_buttons:
             print("    ℹ️  No module accordions found, trying Courses section...")
             page.goto(f"{base_url}#courses", wait_until="domcontentloaded")
-            page.wait_for_timeout(1500)
-            close_ads_and_popups(page)
+            wait(page, 1500)
+            clean_ads(page, times=1, delay_ms=500)
             
             # Try again with filtering
             all_accordions = page.locator('button[aria-expanded]').all()
@@ -463,7 +466,7 @@ def process_modules_section(page, base_url):
             for idx, btn in enumerate(module_buttons, 1):
                 try:
                     # Close ads before each click
-                    close_ads_and_popups(page)
+                    clean_ads(page, times=1, delay_ms=300)
                     
                     # Check if already expanded
                     is_expanded = btn.get_attribute("aria-expanded")
@@ -481,16 +484,16 @@ def process_modules_section(page, base_url):
                     # Scroll to module
                     print(f"    [{idx}/{total}] Scrolling to module...")
                     btn.scroll_into_view_if_needed()
-                    page.wait_for_timeout(600)
+                    wait(page, 600)
                     
                     # Click to expand
                     print(f"    [{idx}/{total}] Clicking to expand...")
-                    btn.click(timeout=2000)
-                    print(f"    [{idx}/{total}] ✅ Expanded")
+                    if safe_click(page, btn, timeout=2000, scroll=False):
+                        print(f"    [{idx}/{total}] ✅ Expanded")
                     
                     # Wait and close any popup ads
-                    page.wait_for_timeout(1500)
-                    close_ads_and_popups(page)
+                    wait(page, 1500)
+                    clean_ads(page, times=1, delay_ms=400)
                     
                 except Exception as e:
                     print(f"    [{idx}/{total}] ⚠️  Error: {str(e)[:40]}")
@@ -501,14 +504,14 @@ def process_modules_section(page, base_url):
         
         # Scroll through expanded modules
         print("  📜 Scrolling through expanded content...")
-        for i in range(4):
+        for _ in range(4):
             scroll_and_wait(page, 500)
         
         # Click Read more in modules
         click_read_more_buttons_in_section(page, "Modules")
         
         # Final ad cleanup
-        close_ads_and_popups(page)
+        clean_ads(page, times=1, delay_ms=400)
         
         print("  ✅ Modules section complete")
         
@@ -533,11 +536,11 @@ def progressive_scroll_to_bottom(page):
         while scroll_count < max_scrolls:
             # Scroll by viewport height
             page.evaluate("window.scrollBy(0, window.innerHeight * 0.8)")
-            page.wait_for_timeout(600)
+            wait(page, 600)
             
             # Close ads periodically
             if scroll_count % 5 == 0:
-                close_ads_and_popups(page)
+                clean_ads(page, times=1, delay_ms=300)
             
             scroll_count += 1
             
@@ -561,10 +564,10 @@ def progressive_scroll_to_bottom(page):
         
         # Ensure absolute bottom
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        page.wait_for_timeout(2000)
+        wait(page, 2000)
         
         # Final ad cleanup
-        close_ads_and_popups(page)
+        clean_ads(page, times=1, delay_ms=400)
         
         print("  ✅ Scroll complete")
         
@@ -584,13 +587,11 @@ def prepare_page_for_pdf(page):
         print("  🔧 Removing overlays and expanding content...")
         
         # Final aggressive ad/popup cleanup
-        for i in range(3):
-            close_ads_and_popups(page)
-            page.wait_for_timeout(500)
+        clean_ads(page, times=3, delay_ms=500)
         
         # Scroll to top
         page.evaluate("window.scrollTo({top: 0, behavior: 'smooth'})")
-        page.wait_for_timeout(1500)
+        wait(page, 1500)
         
         # Execute cleanup script
         page.evaluate("""
@@ -635,7 +636,7 @@ def prepare_page_for_pdf(page):
             }
         """)
         
-        page.wait_for_timeout(1500)
+        wait(page, 1500)
 
         
         
@@ -652,7 +653,7 @@ def prepare_page_for_pdf(page):
                 window.scrollTo(0, 0);
             }
         """)
-        page.wait_for_timeout(2000)
+        wait(page, 2000)
         
         print("  ✅ Page prepared")
         
@@ -671,7 +672,7 @@ def generate_pdf(page, base_url):
         # Emulate print media
         print("  🖨️  Setting print mode...")
         page.emulate_media(media="print")
-        page.wait_for_timeout(1000)
+        wait(page, 1000)
         
         # Extract course name
         course_name = "Coursera_Course"
@@ -701,7 +702,7 @@ def generate_pdf(page, base_url):
         # 3) Scroll entire page to load lazy elements
         for _ in range(15):
             page.evaluate("window.scrollBy(0, window.innerHeight)")
-            page.wait_for_timeout(500)
+            wait(page, 500)
 
         # 4) Remove fixed headers/overlays that ruin PDF rendering
         page.evaluate("""
@@ -726,7 +727,7 @@ def generate_pdf(page, base_url):
         """)
 
         # 5) Final wait for rendering
-        page.wait_for_timeout(3000)
+        wait(page, 3000)
 
         # Scroll back to top for clean PDF
 
@@ -779,14 +780,20 @@ def main():
                 '--no-sandbox'
             ]
         )
-        
-        page = browser.new_page()
-        page.set_viewport_size({"width": 1920, "height": 1080})
+
+        # Use a browser context; close popups from the active page only.
+        context = browser.new_context(viewport={"width": 1920, "height": 1080})
+        page = context.new_page()
+        page.on("popup", lambda popup: popup.close())
         
         try:
             # Initial page load
             print("\n⏳ Loading page...")
-            page.goto(base_url, wait_until="domcontentloaded")
+            try:
+                page.goto(base_url, wait_until="domcontentloaded")
+            except Exception as e:
+                print(f"\n❌ Navigation failed for URL '{base_url}': {e}")
+                return
             page.wait_for_timeout(3000)
             
             # Close initial popups and block unwanted buttons
@@ -827,6 +834,7 @@ def main():
             traceback.print_exc()
         
         finally:
+            context.close()
             browser.close()
             print("\n✅ Browser closed")
 
