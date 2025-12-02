@@ -336,7 +336,6 @@ def click_read_more_buttons_in_section(page, section_name=""):
         
         # Find all Read more buttons
         all_buttons = page.locator('button:has-text("Read more")').all()
-        all_buttons = page.locator('button:has-text("read more")').all()
         
         if not all_buttons:
             print(f"    ℹ️  No 'Read more' buttons found")
@@ -371,12 +370,12 @@ def click_read_more_buttons_in_section(page, section_name=""):
                 
                 # Valid button - click it
                 btn.scroll_into_view_if_needed()
-                page.wait_for_timeout(400)
+                page.wait_for_timeout(600)
                 
                 btn.click(timeout=1500)
                 clicked += 1
                 print(f"      ✓ Clicked Read more {clicked}")
-                page.wait_for_timeout(600)
+                page.wait_for_timeout(1000)
                 
             except Exception as e:
                 continue
@@ -400,7 +399,7 @@ def process_modules_section(page, base_url):
     try:
         # Navigate to Modules
         page.goto(f"{base_url}#modules", wait_until="domcontentloaded")
-        page.wait_for_timeout(600)
+        page.wait_for_timeout(1500)
         
         # Close any ads
         close_ads_and_popups(page)
@@ -486,7 +485,7 @@ def process_modules_section(page, base_url):
                     
                     # Click to expand
                     print(f"    [{idx}/{total}] Clicking to expand...")
-                    btn.click(timeout=600)
+                    btn.click(timeout=2000)
                     print(f"    [{idx}/{total}] ✅ Expanded")
                     
                     # Wait and close any popup ads
@@ -763,8 +762,7 @@ def generate_pdf(page, base_url):
 def main():
     """Main execution flow"""
     
-    base_url = ["https://www.coursera.org/specializations/six-sigma-green-belt",
-                  "https://www.coursera.org/learn/manufacturing-industry-101?"]
+    base_url = "https://www.coursera.org/specializations/java-programming"
     
     print("\n" + "="*70)
     print("🚀 COURSERA SCRAPER - CLEAN SEQUENTIAL FLOW")
@@ -831,7 +829,6 @@ def main():
         finally:
             browser.close()
             print("\n✅ Browser closed")
-
 
 if __name__ == "__main__":
     main()
